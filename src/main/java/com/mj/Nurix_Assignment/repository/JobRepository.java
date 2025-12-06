@@ -2,6 +2,8 @@ package com.mj.Nurix_Assignment.repository;
 
 import com.mj.Nurix_Assignment.entity.Job;
 import com.mj.Nurix_Assignment.entity.JobStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -23,6 +25,13 @@ public interface JobRepository extends JpaRepository<Job, UUID> {
 
     // Find by unique idempotency key
     Optional<Job> findByIdempotencyKey(String idempotencyKey);
+
+    // Paginated queries
+    Page<Job> findByTenantIdAndStatus(String tenantId, JobStatus status, Pageable pageable);
+
+    Page<Job> findByTenantId(String tenantId, Pageable pageable);
+
+    Page<Job> findByStatus(JobStatus status, Pageable pageable);
 
     // Find first pending job for tenant to preserve FIFO/ordering if needed
     Optional<Job> findFirstByTenantIdAndStatusOrderByCreatedAtAsc(String tenantId, JobStatus status);
