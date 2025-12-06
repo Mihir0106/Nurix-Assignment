@@ -20,4 +20,7 @@ public interface JobRepository extends JpaRepository<Job, UUID> {
 
     // Find by unique idempotency key
     Optional<Job> findByIdempotencyKey(String idempotencyKey);
+
+    // Find first pending job for tenant to preserve FIFO/ordering if needed
+    Optional<Job> findFirstByTenantIdAndStatusOrderByCreatedAtAsc(String tenantId, JobStatus status);
 }
