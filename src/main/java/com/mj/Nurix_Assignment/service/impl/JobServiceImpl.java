@@ -12,6 +12,7 @@ import com.mj.Nurix_Assignment.mapper.JobMapper;
 import com.mj.Nurix_Assignment.repository.JobRepository;
 import com.mj.Nurix_Assignment.dto.ValidationResult;
 import com.mj.Nurix_Assignment.service.JobService;
+import com.mj.Nurix_Assignment.service.JobStatusBroadcaster;
 import com.mj.Nurix_Assignment.service.QuotaExceededException;
 import com.mj.Nurix_Assignment.service.QuotaValidator;
 import com.mj.Nurix_Assignment.service.RateLimitExceededException;
@@ -42,6 +43,7 @@ public class JobServiceImpl implements JobService {
     private final JobMapper jobMapper;
     private final ObjectMapper objectMapper;
     private final TraceIdGenerator traceIdGenerator;
+    private final JobStatusBroadcaster jobStatusBroadcaster;
 
     @Override
     @Transactional
@@ -95,7 +97,10 @@ public class JobServiceImpl implements JobService {
         Job savedJob = jobRepository.save(job);
         log.info("Job created successfully: {} for tenant: {}", savedJob.getId(), tenantId);
 
-        return jobMapper.toResponse(savedJob);
+        JobResponse response = jobMapper.toResponse(savedJob);
+        jobStatusBroadcaster.broadcastJobUpdate(response);
+
+        return response;
     }
 
     @Override
@@ -166,7 +171,9 @@ public class JobServiceImpl implements JobService {
         }
 
         job.setStatus(JobStatus.CANCELLED);
-        jobRepository.save(job);
+        Job savedJob = jobRepository.save(job);
+
+        jobStatusBroadcaster.broadcastJobUpdate(jobMapper.toResponse(savedJob));
 
         log.info("Job cancelled successfully: {}", jobId);
     }

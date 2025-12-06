@@ -9,5 +9,4 @@ public class NurixAssignmentApplication {
 	public static void main(String[] args) {
 		SpringApplication.run(NurixAssignmentApplication.class, args);
 	}
-
 }

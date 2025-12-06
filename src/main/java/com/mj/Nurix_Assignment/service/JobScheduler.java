@@ -7,6 +7,7 @@ import com.mj.Nurix_Assignment.repository.JobRepository;
 import com.mj.Nurix_Assignment.repository.TenantRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.mj.Nurix_Assignment.mapper.JobMapper;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -27,6 +28,8 @@ public class JobScheduler {
     private final JobProcessor jobProcessor;
     private final RetryPolicy retryPolicy;
     private final ConcurrentJobLimiter concurrentJobLimiter;
+    private final JobStatusBroadcaster jobStatusBroadcaster;
+    private final JobMapper jobMapper;
 
     @Qualifier("jobExecutor")
     private final Executor jobExecutor;
@@ -70,6 +73,8 @@ public class JobScheduler {
             Job leasedJob = jobRepository.save(job);
 
             log.info("Leased job {} for tenant {}", leasedJob.getId(), leasedJob.getTenantId());
+
+            jobStatusBroadcaster.broadcastJobUpdate(jobMapper.toResponse(leasedJob));
 
             // Submit to executor
             jobExecutor.execute(() -> {

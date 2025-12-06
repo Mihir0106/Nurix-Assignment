@@ -5,6 +5,7 @@ import com.mj.Nurix_Assignment.entity.Job;
 import com.mj.Nurix_Assignment.entity.JobStatus;
 import com.mj.Nurix_Assignment.repository.DLQEntryRepository;
 import com.mj.Nurix_Assignment.repository.JobRepository;
+import com.mj.Nurix_Assignment.mapper.JobMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
@@ -21,6 +22,8 @@ public class RetryPolicy {
 
     private final JobRepository jobRepository;
     private final DLQEntryRepository dlqEntryRepository;
+    private final JobStatusBroadcaster jobStatusBroadcaster;
+    private final JobMapper jobMapper;
 
     @Transactional
     public void handleFailure(Job job, Exception e) {
@@ -67,6 +70,8 @@ public class RetryPolicy {
                 dlqEntryRepository.save(dlqEntry);
             }
             jobRepository.save(job);
+
+            jobStatusBroadcaster.broadcastJobUpdate(jobMapper.toResponse(job));
         } finally {
             MDC.clear();
         }
@@ -82,6 +87,8 @@ public class RetryPolicy {
             job.setStatus(JobStatus.COMPLETED);
             job.setCompletedAt(Timestamp.from(Instant.now()));
             jobRepository.save(job);
+
+            jobStatusBroadcaster.broadcastJobUpdate(jobMapper.toResponse(job));
         } finally {
             MDC.clear();
         }
