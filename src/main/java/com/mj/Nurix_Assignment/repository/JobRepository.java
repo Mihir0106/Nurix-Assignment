@@ -25,8 +25,8 @@ public interface JobRepository extends JpaRepository<Job, UUID> {
 
     // Paginated queries
     Page<Job> findByTenantIdAndStatus(String tenantId, JobStatus status, Pageable pageable);
-    
+
     Page<Job> findByTenantId(String tenantId, Pageable pageable);
-    
+
     Page<Job> findByStatus(JobStatus status, Pageable pageable);
 }
