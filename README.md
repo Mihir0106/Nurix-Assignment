@@ -44,6 +44,11 @@ This project implements the backend for a Distributed Task Queue System using Sp
     -   Updates status to `PENDING` (scheduler will pick it up after delay logic, or immediately in current simple implementation).
     -   Moves to **DLQ** `dlq_entries` table if `maxRetries` exceeded.
 
+5.  **Rate Limiting & Quota**:
+    -   **RateLimitService**: In-memory (Caffeine) sliding window. Limits request/minute.
+    -   **ConcurrentJobLimiter**: Checks active jobs in DB, caching results for 5s to reduce DB load.
+    -   **QuotaValidator**: Aggregates checks for API/Scheduler.
+
 ## Design Patterns Used
 1.  **Repository Pattern**:
     -   `JobRepository`, `TenantRepository`, `DLQEntryRepository` provide an abstraction over the data access layer, decoupling domain logic from database operations.

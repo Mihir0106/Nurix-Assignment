@@ -11,6 +11,7 @@ import java.util.concurrent.Executor;
 @Configuration
 @EnableAsync
 @EnableScheduling
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "scheduling.enabled", matchIfMissing = true)
 public class AsyncConfig {
 
     @Bean(name = "jobExecutor")

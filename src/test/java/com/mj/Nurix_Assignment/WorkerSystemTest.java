@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.annotation.DirtiesContext;
 
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -18,8 +19,9 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-@SpringBootTest
+@SpringBootTest(properties = "scheduling.enabled=false")
 @ActiveProfiles("test")
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 public class WorkerSystemTest {
 
     @Autowired
@@ -80,6 +82,7 @@ public class WorkerSystemTest {
                     .build();
             jobRepository.save(job);
         }
+        jobRepository.flush();
 
         // Create 1 PENDING job (should NOT be picked up)
         Job pendingJob = Job.builder()

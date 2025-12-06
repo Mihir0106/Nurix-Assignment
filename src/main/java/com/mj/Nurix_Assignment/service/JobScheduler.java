@@ -26,6 +26,7 @@ public class JobScheduler {
     private final TenantRepository tenantRepository;
     private final JobProcessor jobProcessor;
     private final RetryPolicy retryPolicy;
+    private final ConcurrentJobLimiter concurrentJobLimiter;
 
     @Qualifier("jobExecutor")
     private final Executor jobExecutor;
@@ -40,24 +41,12 @@ public class JobScheduler {
     }
 
     private void processTenantJobs(Tenant tenant) {
-        // Double check concurrency limit
-        long runningJobsConfig = jobRepository.countByTenantIdAndStatus(tenant.getName(), JobStatus.RUNNING); // Assuming
-                                                                                                              // tenant.getName()
-                                                                                                              // is the
-                                                                                                              // ID used
-                                                                                                              // in
-                                                                                                              // Jobs.
-                                                                                                              // In
-                                                                                                              // Entity
-                                                                                                              // it is
-                                                                                                              // 'tenantID'.
-        // Wait, Tenant Entity has ID(UUID) and Name(String). Job has tenantId(String).
-        // Let's assume Job.tenantId refers to Tenant.name (since it's a string in Job
-        // entity).
+        // Double check concurrency limit using shared component
+        // 5 is limit, logic is inside.
+        // Wait, scheduler iterates over tenants.
 
-        if (runningJobsConfig >= tenant.getConcurrentJobLimit()) {
-            log.trace("Tenant {} reached concurrency limit ({}/{})", tenant.getName(), runningJobsConfig,
-                    tenant.getConcurrentJobLimit());
+        if (!concurrentJobLimiter.canLease(tenant.getName(), tenant.getConcurrentJobLimit())) {
+            log.trace("Tenant {} reached concurrency limit", tenant.getName());
             return;
         }
 
