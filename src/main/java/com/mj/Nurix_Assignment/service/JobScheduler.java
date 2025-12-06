@@ -30,12 +30,18 @@ public class JobScheduler {
     private final ConcurrentJobLimiter concurrentJobLimiter;
     private final JobStatusBroadcaster jobStatusBroadcaster;
     private final JobMapper jobMapper;
+    private final MetricsService metricsService;
+    private final LoggingService loggingService;
 
     @Qualifier("jobExecutor")
     private final Executor jobExecutor;
 
     @Scheduled(fixedDelay = 5000)
     public void scheduleJobs() {
+        // Register gauge for queue size if needed, or do it in constructor.
+        // Better to rely on health check or a separate metrics scheduler, but keeping
+        // it simple.
+
         List<Tenant> tenants = tenantRepository.findAll();
 
         for (Tenant tenant : tenants) {
@@ -44,17 +50,11 @@ public class JobScheduler {
     }
 
     private void processTenantJobs(Tenant tenant) {
-        // Double check concurrency limit using shared component
-        // 5 is limit, logic is inside.
-        // Wait, scheduler iterates over tenants.
-
         if (!concurrentJobLimiter.canLease(tenant.getName(), tenant.getConcurrentJobLimit())) {
             log.trace("Tenant {} reached concurrency limit", tenant.getName());
             return;
         }
 
-        // Fetch candidate job
-        // We use findFirst... to get the oldest pending job
         var jobOpt = jobRepository.findFirstByTenantIdAndStatusOrderByCreatedAtAsc(tenant.getName(), JobStatus.PENDING);
 
         if (jobOpt.isPresent()) {
@@ -65,12 +65,13 @@ public class JobScheduler {
 
     private void leaseAndExecute(Job job) {
         try {
-            // Optimistic Locking: This will fail if version changed
             job.setStatus(JobStatus.RUNNING);
             job.setStartedAt(Timestamp.from(Instant.now()));
 
-            // Save immediately to commit state before async execution
             Job leasedJob = jobRepository.save(job);
+
+            loggingService.logJobEvent(com.mj.Nurix_Assignment.enums.JobEvent.JOB_STARTED,
+                    leasedJob.getId().toString(), leasedJob.getTenantId(), null, null);
 
             log.info("Leased job {} for tenant {}", leasedJob.getId(), leasedJob.getTenantId());
 
@@ -78,11 +79,38 @@ public class JobScheduler {
 
             // Submit to executor
             jobExecutor.execute(() -> {
+                long startTime = System.currentTimeMillis();
                 try {
+                    org.slf4j.MDC.put("traceId", leasedJob.getTraceId());
+                    org.slf4j.MDC.put("tenantId", leasedJob.getTenantId());
+                    org.slf4j.MDC.put("jobId", leasedJob.getId().toString());
+
                     jobProcessor.process(leasedJob);
+
+                    long duration = System.currentTimeMillis() - startTime;
+                    metricsService.recordJobProcessingDuration(leasedJob.getTenantId(), duration);
+                    metricsService.incrementJobCompleted(leasedJob.getTenantId(), "SUCCESS");
+
+                    loggingService.logJobEvent(com.mj.Nurix_Assignment.enums.JobEvent.JOB_COMPLETED,
+                            leasedJob.getId().toString(), leasedJob.getTenantId(), duration, null);
+
                     retryPolicy.handleSuccess(leasedJob);
                 } catch (Exception e) {
+                    long duration = System.currentTimeMillis() - startTime;
+                    metricsService.incrementJobFailed(leasedJob.getTenantId(), e.getClass().getSimpleName());
+
+                    loggingService.logJobEvent(com.mj.Nurix_Assignment.enums.JobEvent.JOB_FAILED,
+                            leasedJob.getId().toString(), leasedJob.getTenantId(), duration, e.getMessage());
+
                     retryPolicy.handleFailure(leasedJob, e);
+                    // Check if retried
+                    if (leasedJob.getStatus() == JobStatus.PENDING) { // Assuming RETRY status exists or similar
+                        metricsService.incrementJobRetry(leasedJob.getTenantId());
+                        loggingService.logJobEvent(com.mj.Nurix_Assignment.enums.JobEvent.JOB_RETRIED,
+                                leasedJob.getId().toString(), leasedJob.getTenantId(), null, null);
+                    }
+                } finally {
+                    org.slf4j.MDC.clear();
                 }
             });
 
