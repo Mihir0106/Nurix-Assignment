@@ -18,6 +18,9 @@ public interface JobRepository extends JpaRepository<Job, UUID> {
     // Custom query to count running jobs by tenant
     long countByTenantIdAndStatus(String tenantId, JobStatus status);
 
+    // Global count by status
+    long countByStatus(JobStatus status);
+
     // Find by unique idempotency key
     Optional<Job> findByIdempotencyKey(String idempotencyKey);
 
