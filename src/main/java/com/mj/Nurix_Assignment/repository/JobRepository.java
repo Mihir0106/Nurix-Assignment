@@ -29,4 +29,7 @@ public interface JobRepository extends JpaRepository<Job, UUID> {
     Page<Job> findByTenantId(String tenantId, Pageable pageable);
 
     Page<Job> findByStatus(JobStatus status, Pageable pageable);
+
+    // Find first pending job for tenant to preserve FIFO/ordering if needed
+    Optional<Job> findFirstByTenantIdAndStatusOrderByCreatedAtAsc(String tenantId, JobStatus status);
 }

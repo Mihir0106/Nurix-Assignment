@@ -10,8 +10,11 @@ import com.mj.Nurix_Assignment.entity.JobStatus;
 import com.mj.Nurix_Assignment.exception.ResourceNotFoundException;
 import com.mj.Nurix_Assignment.mapper.JobMapper;
 import com.mj.Nurix_Assignment.repository.JobRepository;
+import com.mj.Nurix_Assignment.dto.ValidationResult;
 import com.mj.Nurix_Assignment.service.JobService;
+import com.mj.Nurix_Assignment.service.QuotaExceededException;
 import com.mj.Nurix_Assignment.service.QuotaValidator;
+import com.mj.Nurix_Assignment.service.RateLimitExceededException;
 import com.mj.Nurix_Assignment.service.RateLimitService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +28,8 @@ import java.util.UUID;
 /**
  * Implementation of job service.
  * Uses Service Layer Pattern and follows Single Responsibility Principle.
- * Delegates to specialized services (RateLimitService, QuotaValidator) following Dependency Inversion Principle.
+ * Delegates to specialized services (RateLimitService, QuotaValidator)
+ * following Dependency Inversion Principle.
  */
 @Slf4j
 @Service
@@ -33,7 +37,7 @@ import java.util.UUID;
 public class JobServiceImpl implements JobService {
 
     private final JobRepository jobRepository;
-    private final RateLimitService rateLimitService;
+    // RateLimitService is checked inside QuotaValidator
     private final QuotaValidator quotaValidator;
     private final JobMapper jobMapper;
     private final ObjectMapper objectMapper;
@@ -53,11 +57,20 @@ public class JobServiceImpl implements JobService {
             }
         }
 
-        // Validate rate limits
-        rateLimitService.validateRateLimit(tenantId);
-
-        // Validate quota
-        quotaValidator.validateQuota(tenantId);
+        // Validate quota and rate limits
+        ValidationResult validationResult = quotaValidator.validate(tenantId);
+        if (!validationResult.isValid()) {
+            switch (validationResult.getErrorCode()) {
+                case "RATE_LIMIT_EXCEEDED":
+                    throw new RateLimitExceededException(validationResult.getErrorMessage());
+                case "CONCURRENT_LIMIT_EXCEEDED":
+                    throw new QuotaExceededException(validationResult.getErrorMessage());
+                case "TENANT_NOT_FOUND":
+                    throw new ResourceNotFoundException(validationResult.getErrorMessage());
+                default:
+                    throw new IllegalStateException(validationResult.getErrorMessage());
+            }
+        }
 
         // Create new job
         String payloadJson;
@@ -89,7 +102,7 @@ public class JobServiceImpl implements JobService {
     @Transactional(readOnly = true)
     public JobResponse getJobById(UUID jobId, String tenantId) {
         log.debug("Fetching job: {} for tenant: {}", jobId, tenantId);
-        
+
         Job job = jobRepository.findById(jobId)
                 .orElseThrow(() -> new ResourceNotFoundException("Job not found: " + jobId));
 
@@ -105,7 +118,7 @@ public class JobServiceImpl implements JobService {
     @Transactional(readOnly = true)
     public JobStatusResponse getJobStatus(UUID jobId) {
         log.debug("Fetching job status: {}", jobId);
-        
+
         Job job = jobRepository.findById(jobId)
                 .orElseThrow(() -> new ResourceNotFoundException("Job not found: " + jobId));
 
@@ -118,7 +131,7 @@ public class JobServiceImpl implements JobService {
         log.debug("Listing jobs for tenant: {}, status: {}", tenantId, status);
 
         Page<Job> jobs;
-        
+
         if (tenantId != null && status != null) {
             JobStatus jobStatus = JobStatus.valueOf(status.toUpperCase());
             jobs = jobRepository.findByTenantIdAndStatus(tenantId, jobStatus, pageable);
@@ -138,7 +151,7 @@ public class JobServiceImpl implements JobService {
     @Transactional
     public void cancelJob(UUID jobId, String tenantId) {
         log.info("Cancelling job: {} for tenant: {}", jobId, tenantId);
-        
+
         Job job = jobRepository.findById(jobId)
                 .orElseThrow(() -> new ResourceNotFoundException("Job not found: " + jobId));
 
@@ -154,8 +167,7 @@ public class JobServiceImpl implements JobService {
 
         job.setStatus(JobStatus.CANCELLED);
         jobRepository.save(job);
-        
+
         log.info("Job cancelled successfully: {}", jobId);
     }
 }
-

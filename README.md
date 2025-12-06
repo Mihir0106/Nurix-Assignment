@@ -22,6 +22,33 @@ This project implements the backend for a Distributed Task Queue System using Sp
 -   `dlq_entries` table for error audit.
 -   Foreign Key constraint `fk_dlq_job` ensures data integrity between DLQ and Jobs.
 
+## Worker System LLD
+
+### Components
+1.  **JobScheduler**:
+    -   runs every 5 seconds (`@Scheduled`).
+    -   Iterates through tenants to ensure fair polling.
+    -   Checks `concurrentJobLimit` vs running jobs count before leasing.
+    -   **Leasing**: Uses optimistic locking (`UPDATE ... WHERE version=?`) to mark a job as `RUNNING`.
+
+2.  **JobExecutor**:
+    -   `ThreadPoolTaskExecutor` (Core: 5, Max: 10, Queue: 100).
+    -   Executes `JobProcessor` logic asynchronously.
+
+3.  **JobProcessor**:
+    -   Parses payload and simulates work (sleep 5-10s).
+    -   Uses **MDC** to inject `traceId` into logs for observability.
+
+4.  **RetryPolicy**:
+    -   **Exponential Backoff**: `2 * 2^retryCount` seconds.
+    -   Updates status to `PENDING` (scheduler will pick it up after delay logic, or immediately in current simple implementation).
+    -   Moves to **DLQ** `dlq_entries` table if `maxRetries` exceeded.
+
+5.  **Rate Limiting & Quota**:
+    -   **RateLimitService**: In-memory (Caffeine) sliding window. Limits request/minute.
+    -   **ConcurrentJobLimiter**: Checks active jobs in DB, caching results for 5s to reduce DB load.
+    -   **QuotaValidator**: Aggregates checks for API/Scheduler.
+
 ## Design Patterns Used
 1.  **Repository Pattern**:
     -   `JobRepository`, `TenantRepository`, `DLQEntryRepository` provide an abstraction over the data access layer, decoupling domain logic from database operations.
